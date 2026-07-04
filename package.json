@@ -16,6 +16,8 @@
     "start": "node dist/index.js",
     "fetch-corpus": "npm run build && node scripts/fetch-corpus.mjs",
     "drift": "node test/drift.mjs",
+    "provenance": "node test/provenance.mjs",
+    "security": "node test/security.mjs",
     "smoke": "node test/smoke.mjs"
   },
   "engines": {

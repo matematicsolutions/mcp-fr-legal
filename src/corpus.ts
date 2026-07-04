@@ -18,6 +18,34 @@ export const CORPUS = {
     entry: "package/data/database.db",
 };
 
+// SSRF allowlist - wzorzec z russellbrenner/jurisd (Apache-2.0, src/services/fetch-module.ts:
+// allowlist hostow przy dystrybucji modulow danych). Kod od zera. Defense-in-depth: pobor korpusu
+// tylko z zaufanych hostow, tylko https (gdyby URL zrodla stal sie env-override'owalny).
+const ALLOWED_HOSTS = new Set([
+    "registry.npmjs.org",
+    "github.com",
+    "objects.githubusercontent.com", // GitHub Releases redirect target
+    "raw.githubusercontent.com",
+]);
+
+export function assertAllowedHost(rawUrl: string): URL {
+    let u: URL;
+    try {
+        u = new URL(rawUrl);
+    } catch {
+        throw new Error(`Nieprawidlowy URL zrodla korpusu: ${rawUrl}`);
+    }
+    if (u.protocol !== "https:") {
+        throw new Error(`Odmawiam poboru po ${u.protocol} (wymagane https): ${rawUrl}`);
+    }
+    if (!ALLOWED_HOSTS.has(u.hostname)) {
+        throw new Error(
+            `Host '${u.hostname}' spoza allowlisty zrodel korpusu (SSRF guard). Dozwolone: ${[...ALLOWED_HOSTS].join(", ")}`,
+        );
+    }
+    return u;
+}
+
 function digest(algo: "sha1" | "sha256", buf: Buffer): string {
     return createHash(algo).update(buf).digest("hex");
 }
@@ -45,8 +73,9 @@ function extractFromTar(tar: Buffer, target: string): Buffer | null {
 }
 
 export async function downloadCorpus(dest: string, log: (m: string) => void = () => {}): Promise<string> {
+    const url = assertAllowedHost(CORPUS.npmTarball);
     log(`Pobieram korpus FR z ${CORPUS.source} (~110 MB spakowane) ...`);
-    const res = await fetch(CORPUS.npmTarball);
+    const res = await fetch(url);
     if (!res.ok) throw new Error(`HTTP ${res.status} przy pobieraniu tarballa npm`);
     const tgz = Buffer.from(await res.arrayBuffer());
     if (digest("sha1", tgz) !== CORPUS.tarballSha1) {
