@@ -1,0 +1,36 @@
+{
+  "name": "@matematicsolutions/mcp-fr-legal",
+  "version": "0.1.0",
+  "description": "Offline MCP korpus prawa francuskiego (Legifrance/DILA) - verbatim, zero-cloud, structuredContent.citations",
+  "type": "module",
+  "bin": {
+    "mcp-fr-legal": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "scripts/fetch-corpus.mjs"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "fetch-corpus": "node scripts/fetch-corpus.mjs",
+    "drift": "node test/drift.mjs",
+    "smoke": "node test/smoke.mjs"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "typescript": "^5.6.0"
+  },
+  "license": "MIT",
+  "author": "MateMatic Solutions",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/matematicsolutions/mcp-fr-legal"
+  }
+}
