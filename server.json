@@ -2,12 +2,12 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-07-09/server.schema.json",
   "name": "io.github.matematicsolutions/mcp-fr-legal",
   "description": "Offline MCP korpus prawa francuskiego (Legifrance/DILA) - verbatim + grounding cytatu",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "@matematicsolutions/mcp-fr-legal",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "transport": { "type": "stdio" }
     }
   ]
