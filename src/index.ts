@@ -19,6 +19,7 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { fileURLToPath } from "node:url";
 import { ensureCorpus } from "./corpus.js";
+import { buildProvenance, stalenessThresholdDays, type Provenance } from "./provenance.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -38,19 +39,24 @@ function db(): DatabaseSync {
     return dbHandle;
 }
 
-// Snapshot korpusu z db_metadata.built_at (leniwie, z fallbackiem).
-let snapshotInfo = "";
-function snapshot(): string {
-    if (snapshotInfo) return snapshotInfo;
+// Provenance korpusu z db_metadata.built_at (leniwie, cache) - snapshot_date + staleness_advisory.
+let provCache: Provenance | null = null;
+function provenance(): Provenance {
+    if (provCache) return provCache;
+    let builtAt = "";
     try {
         const row = db().prepare("SELECT value FROM db_metadata WHERE key = 'built_at'").get() as
             | { value?: string }
             | undefined;
-        snapshotInfo = row?.value ? String(row.value).slice(0, 10) : "nieznana";
+        builtAt = row?.value ? String(row.value) : "";
     } catch {
-        snapshotInfo = "nieznana";
+        builtAt = "";
     }
-    return snapshotInfo;
+    provCache = buildProvenance(builtAt, stalenessThresholdDays());
+    return provCache;
+}
+function snapshot(): string {
+    return provenance().snapshot_date;
 }
 
 function disclaimer(): string {
@@ -103,6 +109,7 @@ function docUrl(doc: DocRow | null): string | null {
 }
 
 function buildCitation(doc: DocRow | null, provisionRef: string, provisionTitle?: string | null) {
+    const p = provenance();
     return {
         document_id: doc?.id ?? null,
         document_title: doc?.title ?? doc?.short_name ?? null,
@@ -111,7 +118,9 @@ function buildCitation(doc: DocRow | null, provisionRef: string, provisionTitle?
         legifrance_url: docUrl(doc),
         source_authority: "DILA (Legifrance)",
         license: "Licence Ouverte v2.0 (Etalab)",
-        snapshot: snapshot(),
+        snapshot: p.snapshot_date,
+        age_days: p.age_days,
+        ...(p.staleness_advisory ? { staleness_advisory: p.staleness_advisory } : {}),
     };
 }
 

@@ -42,7 +42,9 @@ Konfiguracja w kliencie MCP:
 | `fr_list_documents(type?, query?)` | Lista dokumentow (discovery `document_id`). |
 
 Kazde narzedzie zwraca `structuredContent.citations` (document_id, provision_ref, URL Legifrance,
-`source_authority` DILA, `license` Etalab v2.0, snapshot).
+`source_authority` DILA, `license` Etalab v2.0, `snapshot`, `age_days` oraz `staleness_advisory`
+gdy snapshot starszy niz prog `FR_STALENESS_DAYS` (domyslnie 365) - provenance/staleness wzorowane na
+russellbrenner/jurisd, Apache-2.0).
 
 ## Grounding (anti-halucynacja)
 

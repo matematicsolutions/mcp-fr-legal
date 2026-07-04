@@ -40,6 +40,17 @@ Copyright Ansvar Systems
 Apache-2.0 pozwala na uzycie komercyjne, modyfikacje i redystrybucje przy zachowaniu noty o
 prawach autorskich i NOTICE. Atrybucja w tym pliku + README.md + LICENSE.
 
+## Wzorzec provenance/staleness: russellbrenner/jurisd
+
+- **Repo:** https://github.com/russellbrenner/jurisd - **Licencja:** Apache-2.0 (c) Russell Brenner.
+- **Co bierzemy:** IDEE (nie kod) z `src/services/modules.ts` (`buildMetadata`: mandatory provenance
+  block z `snapshot_date` + `staleness_advisory` gdy snapshot starszy niz prog) i `src/services/
+  source-store.ts` (integralnosc/swiezosc zrodla). Zaadaptowane w `src/provenance.ts` - kod napisany
+  od zera pod kontrakt MateMatic (`structuredContent.citations` niesie `snapshot_date`, `age_days`,
+  `staleness_advisory`). Krytyczne, bo upstream FR jest zamrozony (repo Ansvar zarchiwizowane) - agent
+  musi wiedziec, jak swieze jest to, co cytuje.
+- **Czego NIE bierzemy:** kodu jurisd (AU/NZ/AustLII/AGLC4, poza zakresem), jego CLI/TUI/modules-loadera.
+
 ## Wzorzec konektora: mcp-eu-compliance (MateMatic)
 
 Struktura repo i kontrakt MCP (`structuredContent.citations`, verbatim zero-LLM, disclaimer,
