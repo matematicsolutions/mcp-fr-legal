@@ -17,40 +17,24 @@ import {
 import { DatabaseSync } from "node:sqlite";
 import * as path from "node:path";
 import * as os from "node:os";
-import * as fs from "node:fs";
 import { fileURLToPath } from "node:url";
+import { ensureCorpus } from "./corpus.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // ---------------------------------------------------------------------------
-// Korpus (offline). Kolejnosc: FR_LEGAL_DB (override) -> data/database.db (dev) -> cache.
+// Korpus (offline). Kolejnosc: FR_LEGAL_DB (override) -> data/database.db (dev) -> cache
+// (pobierany RAZ z tarballa npm Ansvar; patrz corpus.ts). Sciezka ustawiana w main().
 // ---------------------------------------------------------------------------
 const BUNDLED_DB = path.join(__dirname, "..", "data", "database.db");
 const CACHE_DB = path.join(os.homedir(), ".matematic", "cache", "fr-legal", "database.db");
 
 let DB_PATH = "";
-function resolveDbPath(): string {
-    const override = process.env.FR_LEGAL_DB;
-    if (override) {
-        if (!fs.existsSync(override)) {
-            throw new Error(`FR_LEGAL_DB wskazuje nieistniejacy plik: ${override}`);
-        }
-        return override;
-    }
-    if (fs.existsSync(BUNDLED_DB) && fs.statSync(BUNDLED_DB).size > 1_000_000) return BUNDLED_DB;
-    if (fs.existsSync(CACHE_DB) && fs.statSync(CACHE_DB).size > 1_000_000) return CACHE_DB;
-    throw new Error(
-        "Brak korpusu database.db. Uruchom `npm run fetch-corpus` (pobiera artefakt DILA/Ansvar) " +
-        "albo ustaw FR_LEGAL_DB na lokalna kopie.",
-    );
-}
 
 let dbHandle: DatabaseSync | null = null;
 function db(): DatabaseSync {
-    if (!dbHandle) {
-        if (!DB_PATH) DB_PATH = resolveDbPath();
-        dbHandle = new DatabaseSync(DB_PATH, { readOnly: true });
-    }
+    if (!DB_PATH) throw new Error("Korpus nierozwiazany (DB_PATH pusty) - blad startu serwera");
+    if (!dbHandle) dbHandle = new DatabaseSync(DB_PATH, { readOnly: true });
     return dbHandle;
 }
 
@@ -435,9 +419,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 });
 
 async function main() {
-    // Rozwiaz sciezke korpusu wczesnie (jasny blad przy braku DB), ale NIE otwieraj DB
-    // przed pierwszym zapytaniem (leniwie w db()).
-    DB_PATH = resolveDbPath();
+    // Rozwiaz/pobierz korpus RAZ przed serwowaniem (bootstrap; DB otwierana leniwie w db()).
+    DB_PATH = await ensureCorpus(BUNDLED_DB, CACHE_DB, process.env.FR_LEGAL_DB);
     const transport = new StdioServerTransport();
     await server.connect(transport);
     process.stderr.write(`mcp-fr-legal gotowy (korpus: ${path.basename(DB_PATH)})\n`);

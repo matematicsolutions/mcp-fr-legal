@@ -13,7 +13,7 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
-    "fetch-corpus": "node scripts/fetch-corpus.mjs",
+    "fetch-corpus": "npm run build && node scripts/fetch-corpus.mjs",
     "drift": "node test/drift.mjs",
     "smoke": "node test/smoke.mjs"
   },
