@@ -2,69 +2,70 @@
 
 # mcp-fr-legal
 
-Serwer **MCP** udostepniajacy **offline korpus prawa francuskiego** (Legifrance/DILA, pelny tekst)
-w lokalnym **SQLite FTS5**, z narzedziami do wyszukiwania i **groundingu cytatu**. Snippety zwracane
-**verbatim** z bazy (zero-LLM) - kazdy z `document_id`, `provision_ref` i URL do Legifrance.
-Anti-halucynacja przez mechanike, nie przez zaufanie do modelu.
+An **MCP** server exposing an **offline corpus of French law** (Legifrance / DILA, full text)
+in a local **SQLite FTS5** database, with tools for search and **citation grounding**. Snippets are
+returned **verbatim** from the database (zero-LLM), each with a `document_id`, a `provision_ref` and a
+Legifrance URL. Anti-hallucination by mechanism, not by trust in the model.
 
-**Zakres:** kody i ustawy skonsolidowane LEGI (Code civil, Code du travail, Code penal, Code de
-commerce, Code de la defense, Code de la securite interieure, ...) - **3 953 dokumenty / 193 681
-przepisow** w bundlowanym snapshocie. **Bez orzecznictwa (jurisprudence)** i bez pelnego JORF.
+**Scope:** consolidated LEGI codes and statutes (Code civil, Code du travail, Code penal, Code de
+commerce, Code de la defense, Code de la securite interieure, ...) - **3,953 documents / 193,681
+provisions** in the bundled snapshot. **No case law (jurisprudence)** and no full JORF.
 
-Rodzina konektorow prawa MateMatic: [`mcp-saos`](https://github.com/matematicsolutions/mcp-saos)
-(orzecznictwo PL), [`mcp-eu-compliance`](https://github.com/matematicsolutions/mcp-eu-compliance)
-(prawo UE), [`mcp-eu-sparql`](https://github.com/matematicsolutions/mcp-eu-sparql) (live EUR-Lex).
+Part of the MateMatic law-connector family: [`mcp-saos`](https://github.com/matematicsolutions/mcp-saos)
+(PL case law), [`mcp-eu-compliance`](https://github.com/matematicsolutions/mcp-eu-compliance)
+(EU law), [`mcp-eu-sparql`](https://github.com/matematicsolutions/mcp-eu-sparql) (live EUR-Lex).
 
-## Instalacja
+## Installation
 
 ```bash
-npm install            # Node 22.5+ (node:sqlite wbudowane, FTS5)
-npm run fetch-corpus   # pobiera database.db (~303 MB) z artefaktu DILA/Ansvar (Apache-2.0 + Etalab)
+npm install            # Node 22.5+ (node:sqlite built in, FTS5)
+npm run fetch-corpus   # downloads database.db (~303 MB) from the DILA/Ansvar artifact (Apache-2.0 + Etalab)
 npm run build
 npm start
 ```
 
-Air-gap / pelny offline: ustaw `FR_LEGAL_DB` na lokalna kopie `database.db`.
+Air-gapped / fully offline: point `FR_LEGAL_DB` at a local copy of `database.db`.
 
-Konfiguracja w kliencie MCP:
+MCP client configuration:
 
 ```json
-{ "name": "fr-legal", "command": "node", "args": ["/sciezka/mcp-fr-legal/dist/index.js"] }
+{ "name": "fr-legal", "command": "node", "args": ["/path/to/mcp-fr-legal/dist/index.js"] }
 ```
 
-## Narzedzia
+## Tools
 
-| Tool | Opis |
+| Tool | Description |
 |---|---|
-| `fr_search(query, documents?, limit?)` | Pelnotekstowo (FTS5) po przepisach, snippety verbatim + citations. |
-| `fr_article(document_id, provision_ref)` | Pelny verbatim tekst przepisu (tolerancyjny `provision_ref`). |
-| `fr_validate_citation(document_id, provision_ref)` | **Grounding**: czy cytat istnieje (fail-closed) - anti-halucynacja. |
-| `fr_list_documents(type?, query?)` | Lista dokumentow (discovery `document_id`). |
+| `fr_search(query, documents?, limit?)` | Full-text (FTS5) over provisions, verbatim snippets + citations. |
+| `fr_article(document_id, provision_ref)` | Full verbatim text of a provision (tolerant `provision_ref`). |
+| `fr_validate_citation(document_id, provision_ref)` | **Grounding**: whether the citation exists (fail-closed) - anti-hallucination. |
+| `fr_list_documents(type?, query?)` | List documents (discovery of `document_id`). |
 
-Kazde narzedzie zwraca `structuredContent.citations` (document_id, provision_ref, URL Legifrance,
-`source_authority` DILA, `license` Etalab v2.0, `snapshot`, `age_days` oraz `staleness_advisory`
-gdy snapshot starszy niz prog `FR_STALENESS_DAYS` (domyslnie 365) - provenance/staleness wzorowane na
-russellbrenner/jurisd, Apache-2.0).
+Every tool returns `structuredContent.citations` (document_id, provision_ref, Legifrance URL,
+`source_authority` DILA, `license` Etalab v2.0, `snapshot`, `age_days`, and a `staleness_advisory`
+when the snapshot is older than the `FR_STALENESS_DAYS` threshold (365 by default) - provenance and
+staleness modelled on russellbrenner/jurisd, Apache-2.0).
 
-## Grounding (anti-halucynacja)
+## Grounding (anti-hallucination)
 
-`fr_validate_citation` to prymityw groundingu: sprawdza mechanicznie, czy `document_id + provision_ref`
-istnieje w korpusie. **Fail-closed** - brak dokumentu/przepisu => `provision_exists=false` (nie
-"prawdopodobnie ok"). Spina sie z [`citation-grounding-pl`](https://github.com/matematicsolutions/awesome-matematic-skills-pl)
-jako resolver kotwicy dla prawa FR (poziom ISTNIENIE).
+`fr_validate_citation` is a grounding primitive: it mechanically checks whether `document_id +
+provision_ref` exists in the corpus. **Fail-closed** - a missing document or provision yields
+`provision_exists=false` (not "probably ok"). It plugs into
+[`citation-grounding-pl`](https://github.com/matematicsolutions/awesome-matematic-skills-pl)
+as the anchor resolver for French law (EXISTENCE level).
 
-## Zero-cloud / RODO
+## Zero-cloud / GDPR
 
-Zero wywolan sieciowych w runtime (baza otwierana read-only). Bootstrap korpusu (`fetch-corpus`) to
-jedyny moment sieci. Tekst zwracany verbatim (grounding). Swiezosc: sprawdzaj na Legifrance (snapshot
-!= zrodlo autentyczne = Journal officiel).
+No network calls at runtime (the database is opened read-only). Corpus bootstrap (`fetch-corpus`) is
+the only moment a network is used. Text is returned verbatim (grounding). For currency, check
+Legifrance (a snapshot is not the authoritative source - the Journal officiel is).
 
-## Licencja i atrybucja
+## License and attribution
 
-- **Kod:** MIT (MateMatic Solutions).
-- **Korpus:** artefakt `database.db` z [Ansvar-Systems/French-law-mcp](https://github.com/Ansvar-Systems/French-law-mcp)
-  (Apache-2.0); tekst prawny = **Licence Ouverte v2.0 (Etalab)**, DILA/Legifrance, reuzycie komercyjne
-  z atrybucja. Pelna atrybucja: [THIRD_PARTY_INSPIRATIONS.md](./THIRD_PARTY_INSPIRATIONS.md).
+- **Code:** MIT (MateMatic Solutions).
+- **Corpus:** the `database.db` artifact from [Ansvar-Systems/French-law-mcp](https://github.com/Ansvar-Systems/French-law-mcp)
+  (Apache-2.0); the legal text is under the **Licence Ouverte v2.0 (Etalab)**, DILA/Legifrance,
+  commercial reuse with attribution. Full attribution: [THIRD_PARTY_INSPIRATIONS.md](./THIRD_PARTY_INSPIRATIONS.md).
 
-Cytowanie: *MateMatic Solutions (2026), mcp-fr-legal - offline MCP korpus prawa francuskiego
-(Legifrance/DILA), MIT. Dane: DILA, Licence Ouverte v2.0.*
+Citation: *MateMatic Solutions (2026), mcp-fr-legal - an offline MCP corpus of French law
+(Legifrance/DILA), MIT. Data: DILA, Licence Ouverte v2.0.*
