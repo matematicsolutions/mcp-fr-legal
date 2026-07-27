@@ -398,7 +398,10 @@ Tool zwraca isError:true + [kod]:
 // Serwer
 // ---------------------------------------------------------------------------
 const server = new Server(
-    { name: "mcp-fr-legal", version: "0.1.0" },
+    // Wersja MUSI isc za package.json/server.json - klient MCP widzi wlasnie to
+    // pole w serverInfo. Byla zamrozona na 0.1.0, gdy paczka szla juz jako 0.1.1
+    // (wykryte 2026-07-27 przy handshake'u na spakowanym artefakcie).
+    { name: "mcp-fr-legal", version: "0.1.2" },
     { capabilities: { tools: {} }, instructions: buildInstructions() },
 );
 
