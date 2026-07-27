@@ -5,8 +5,10 @@
 // Zrodlo pinowane + integralnosc: sha1 tarballa (npm dist.shasum) + sha256 wyluskanej bazy.
 // Docelowo MateMatic hostuje wlasny snapshot; dopoki nie, ciagniemy przypieta wersje z npm.
 
-import { createHash } from "node:crypto";
-import { gunzipSync } from "node:zlib";
+import { createHash, type Hash } from "node:crypto";
+import { createGunzip } from "node:zlib";
+import { Readable, Transform, Writable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
@@ -46,52 +48,147 @@ export function assertAllowedHost(rawUrl: string): URL {
     return u;
 }
 
-function digest(algo: "sha1" | "sha256", buf: Buffer): string {
-    return createHash(algo).update(buf).digest("hex");
-}
+const BLOCK = 512;
+// Straznik bomby zip: rozpakowany tar leci na DYSK, nie do pamieci, wiec bomba
+// kosztuje miejsce, nie RAM - ale limit i tak trzymamy. Korpus ma ~303 MB,
+// wiec 2 GB to zapas rzedu 6x na przyszle wersje, a nie zaproszenie.
+const MAX_DECOMPRESSED = 2_000_000_000;
 
-// Minimalny ekstraktor JEDNEGO pliku z tara (512-bajtowe bloki). Pomija naglowki pax/global
-// (ich name != target). Nazwa docelowa < 100 znakow -> brak long-name/pax-path.
-function extractFromTar(tar: Buffer, target: string): Buffer | null {
-    let off = 0;
-    while (off + 512 <= tar.length) {
-        const block = tar.subarray(off, off + 512);
-        let allZero = true;
-        for (let i = 0; i < 512; i++) if (block[i] !== 0) { allZero = false; break; }
-        if (allZero) break; // koniec archiwum (dwa zerowe bloki)
-        const name = block.subarray(0, 100).toString("utf8").replace(/\0[\s\S]*$/, "");
-        const sizeStr = block.subarray(124, 136).toString("utf8").replace(/\0[\s\S]*$/, "").trim();
-        const size = parseInt(sizeStr, 8) || 0;
-        const typeflag = String.fromCharCode(block[156]);
-        const dataStart = off + 512;
-        if (name === target && (typeflag === "0" || typeflag === "\0" || typeflag === "")) {
-            return tar.subarray(dataStart, dataStart + size);
-        }
-        off = dataStart + Math.ceil(size / 512) * 512;
+// Strumieniowy ekstraktor JEDNEGO pliku z tara (bloki 512 B). Pomija naglowki
+// pax/global (ich name != target). Nazwa docelowa < 100 znakow -> brak
+// long-name/pax-path. W pamieci trzyma tylko biezacy kawalek strumienia plus
+// ogon < 512 B - to jest ROZNICA wobec poprzedniej wersji, ktora materializowala
+// caly tar naraz. Zapis przez writeSync: prostsze niz backpressure i daje
+// naturalne dlawienie strumienia (bootstrap biegnie raz, nie w petli zapytan).
+class TarSingleFileExtractor extends Writable {
+    private leftover: Buffer = Buffer.alloc(0);
+    private mode: "header" | "copy" | "drain" = "header";
+    private remaining = 0;
+    private pad = 0;
+    private total = 0;
+    private ended = false;
+    found = false;
+    bytesWritten = 0;
+    readonly sha256: Hash = createHash("sha256");
+
+    constructor(private readonly target: string, private readonly fd: number) {
+        super();
     }
-    return null;
+
+    _write(chunk: Buffer, _enc: BufferEncoding, cb: (e?: Error | null) => void): void {
+        try {
+            this.consume(chunk);
+            cb();
+        } catch (e) {
+            cb(e as Error);
+        }
+    }
+
+    private consume(chunk: Buffer): void {
+        this.total += chunk.length;
+        if (this.total > MAX_DECOMPRESSED) {
+            throw new Error(`Rozpakowany tarball przekroczyl ${MAX_DECOMPRESSED} B - przerywam (ochrona przed bomba zip)`);
+        }
+        const buf = this.leftover.length ? Buffer.concat([this.leftover, chunk]) : chunk;
+        let off = 0;
+        for (;;) {
+            if (this.ended) { off = buf.length; break; }
+            if (this.mode === "header") {
+                if (buf.length - off < BLOCK) break;
+                const h = buf.subarray(off, off + BLOCK);
+                off += BLOCK;
+                let allZero = true;
+                for (let i = 0; i < BLOCK; i++) if (h[i] !== 0) { allZero = false; break; }
+                if (allZero) { this.ended = true; continue; } // koniec archiwum
+                const name = h.subarray(0, 100).toString("utf8").replace(/\0[\s\S]*$/, "");
+                const size = parseInt(h.subarray(124, 136).toString("utf8").replace(/\0[\s\S]*$/, "").trim(), 8) || 0;
+                const typeflag = String.fromCharCode(h[156]);
+                const padded = Math.ceil(size / BLOCK) * BLOCK;
+                const isFile = typeflag === "0" || typeflag === "\0" || typeflag === "";
+                if (!this.found && name === this.target && isFile) {
+                    this.mode = "copy"; this.remaining = size; this.pad = padded - size;
+                } else {
+                    this.mode = "drain"; this.remaining = padded;
+                }
+                continue;
+            }
+            const avail = buf.length - off;
+            if (avail === 0) break;
+            const take = Math.min(this.remaining, avail);
+            if (this.mode === "copy" && take > 0) {
+                const slice = buf.subarray(off, off + take);
+                fs.writeSync(this.fd, slice);
+                this.sha256.update(slice);
+                this.bytesWritten += take;
+            }
+            off += take;
+            this.remaining -= take;
+            if (this.remaining === 0) {
+                if (this.mode === "copy") {
+                    this.found = true;
+                    this.mode = "drain";
+                    this.remaining = this.pad;
+                    this.pad = 0;
+                } else {
+                    this.mode = "header";
+                }
+            }
+        }
+        this.leftover = off < buf.length ? Buffer.from(buf.subarray(off)) : Buffer.alloc(0);
+    }
 }
 
+// Bootstrap STRUMIENIOWY (2026-07-27). Poprzednia wersja robila
+// `Buffer.from(await res.arrayBuffer())` + `gunzipSync()`, czyli trzymala naraz
+// ~110 MB pobranego + ~110 MB kopii + ~303 MB rozpakowanego tara = ponad 520 MB
+// samych buforow. W kontenerze z limitem 768 MB konczylo sie to SIGKILL (exit 137)
+// i serwer NIE WSTAWAL - wykryte przez zewnetrzny audyt zgodnosci mcpprobe
+// (Ahmad-Faraj/mcp-conformance), gdzie bylismy jedynym z 44 konektorow, ktory
+// nie przeszedl handshake'u. Teraz pamiec jest ograniczona rozmiarem kawalka
+// strumienia, niezaleznie od wielkosci korpusu.
+//
+// Kolejnosc kontroli integralnosci sie NIE zmienia z punktu widzenia efektu:
+// sha1 tarballa liczymy w locie (Transform), sha256 bazy w trakcie wypakowania,
+// a `rename` na docelowa nazwe nastepuje DOPIERO po sprawdzeniu obu suma. Roznica
+// jest taka, ze dane niezweryfikowane trafiaja przejsciowo na dysk (plik .tmp,
+// kasowany przy kazdym bledzie) zamiast do RAM - stad dodatkowy limit
+// MAX_DECOMPRESSED, bo rozpakowujemy przed poznaniem sha1.
 export async function downloadCorpus(dest: string, log: (m: string) => void = () => {}): Promise<string> {
     const url = assertAllowedHost(CORPUS.npmTarball);
-    log(`Pobieram korpus FR z ${CORPUS.source} (~110 MB spakowane) ...`);
+    log(`Pobieram korpus FR z ${CORPUS.source} (~110 MB spakowane, ~300 MB po rozpakowaniu, strumieniowo) ...`);
     const res = await fetch(url);
     if (!res.ok) throw new Error(`HTTP ${res.status} przy pobieraniu tarballa npm`);
-    const tgz = Buffer.from(await res.arrayBuffer());
-    if (digest("sha1", tgz) !== CORPUS.tarballSha1) {
-        throw new Error("Niezgodny sha1 tarballa npm - odmawiam uzycia (integralnosc)");
-    }
-    const tar = gunzipSync(tgz);
-    const dbBuf = extractFromTar(tar, CORPUS.entry);
-    if (!dbBuf) throw new Error(`Nie znaleziono ${CORPUS.entry} w tarballu`);
-    if (digest("sha256", dbBuf) !== CORPUS.dbSha256) {
-        throw new Error("Niezgodny sha256 bazy - odmawiam zapisu (integralnosc)");
-    }
+    if (!res.body) throw new Error("Brak strumienia odpowiedzi npm registry");
+
     fs.mkdirSync(path.dirname(dest), { recursive: true });
     const tmp = `${dest}.${process.pid}.tmp`;
-    fs.writeFileSync(tmp, dbBuf);
+    const fd = fs.openSync(tmp, "w");
+    let fdOpen = true;
+    const closeFd = () => { if (fdOpen) { fdOpen = false; try { fs.closeSync(fd); } catch { /* ignore */ } } };
+
+    const sha1 = createHash("sha1");
+    const extractor = new TarSingleFileExtractor(CORPUS.entry, fd);
+    try {
+        const tap = new Transform({
+            transform(c: Buffer, _e, cb) { sha1.update(c); cb(null, c); },
+        });
+        await pipeline(Readable.fromWeb(res.body as never), tap, createGunzip(), extractor);
+        closeFd();
+
+        if (sha1.digest("hex") !== CORPUS.tarballSha1) {
+            throw new Error("Niezgodny sha1 tarballa npm - odmawiam uzycia (integralnosc)");
+        }
+        if (!extractor.found) throw new Error(`Nie znaleziono ${CORPUS.entry} w tarballu`);
+        if (extractor.sha256.digest("hex") !== CORPUS.dbSha256) {
+            throw new Error("Niezgodny sha256 bazy - odmawiam zapisu (integralnosc)");
+        }
+    } catch (e) {
+        closeFd();
+        fs.rmSync(tmp, { force: true });
+        throw e;
+    }
     fs.renameSync(tmp, dest);
-    log(`Korpus gotowy (sha256 OK): ${dest}`);
+    log(`Korpus gotowy (sha1 + sha256 OK, ${extractor.bytesWritten} B): ${dest}`);
     return dest;
 }
 

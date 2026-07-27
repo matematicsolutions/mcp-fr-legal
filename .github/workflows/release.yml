@@ -34,17 +34,19 @@ jobs:
           node-version: "22"
           registry-url: "https://registry.npmjs.org"
 
-      - name: Ensure npm CLI >= 11.5.1
-        run: npm install -g npm@latest
-
       - name: Install dependencies
         run: npm ci
 
       - name: Build
         run: npm run build
 
-      - name: Publish to npm (granular token + provenance)
-        run: npm publish --provenance --access public
+      # Wyrownane do wzorca floty (mcp-saos/nsa/eu-sparql/krs/isap, fix 2026-07-10).
+      # Krok `npm install -g npm@latest` PSUJE wbudowany modul sigstore na obrazie
+      # runnera (MODULE_NOT_FOUND 'sigstore') i wywala `--provenance`. To repo bylo
+      # ostatnim z dryfem - jego 0.1.0 padl 2x wlasnie na tym, 0.1.1 przeszedl tylko
+      # dlatego, ze wersja npm na runnerze byla wtedy jeszcze zgodna.
+      - name: Publish to npm (granular token)
+        run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
