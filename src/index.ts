@@ -401,7 +401,7 @@ const server = new Server(
     // Wersja MUSI isc za package.json/server.json - klient MCP widzi wlasnie to
     // pole w serverInfo. Byla zamrozona na 0.1.0, gdy paczka szla juz jako 0.1.1
     // (wykryte 2026-07-27 przy handshake'u na spakowanym artefakcie).
-    { name: "mcp-fr-legal", version: "0.1.2" },
+    { name: "mcp-fr-legal", version: "0.1.3" },
     { capabilities: { tools: {} }, instructions: buildInstructions() },
 );
 

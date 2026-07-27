@@ -1,6 +1,6 @@
 {
   "name": "@matematicsolutions/mcp-fr-legal",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "mcpName": "io.github.matematicsolutions/mcp-fr-legal",
   "description": "Offline MCP korpus prawa francuskiego (Legifrance/DILA) - verbatim, zero-cloud, structuredContent.citations",
   "type": "module",
