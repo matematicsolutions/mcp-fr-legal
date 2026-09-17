@@ -54,7 +54,7 @@ provision_ref` exists in the corpus. **Fail-closed** - a missing document or pro
 [`citation-grounding-pl`](https://github.com/matematicsolutions/awesome-matematic-skills-pl)
 as the anchor resolver for French law (EXISTENCE level).
 
-## Zero-cloud / GDPR
+## Where data goes
 
 No network calls at runtime (the database is opened read-only). Corpus bootstrap (`fetch-corpus`) is
 the only moment a network is used. Text is returned verbatim (grounding). For currency, check
