@@ -40,6 +40,15 @@ jobs:
       - name: Build
         run: npm run build
 
+      # Until 2026-11-21 the release went `npm ci -> build -> publish` with no test, so a
+      # tagged broken commit could reach npm. Deterministic gates only; `smoke` stays out
+      # because it needs the corpus and the live source.
+      - name: Run gates before publishing
+        run: |
+          npm run drift
+          npm run provenance
+          npm run security
+
       # Wyrownane do wzorca floty (mcp-saos/nsa/eu-sparql/krs/isap, fix 2026-07-10).
       # Krok `npm install -g npm@latest` PSUJE wbudowany modul sigstore na obrazie
       # runnera (MODULE_NOT_FOUND 'sigstore') i wywala `--provenance`. To repo bylo
